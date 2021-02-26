@@ -13,4 +13,4 @@ class Entity:
     def move(self, dx=int, dy=int) -> None:
         #엔티티를 주어진 양만큼 움직임
         self.x += dx
-        self.y ++ dy
+        self.y += dy
