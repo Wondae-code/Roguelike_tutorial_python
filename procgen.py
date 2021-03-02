@@ -5,6 +5,7 @@ from typing import Iterator, List, Tuple, TYPE_CHECKING
 
 import tcod
 
+import entity_factories
 from game_map import GameMap
 import tile_types
 
@@ -39,6 +40,19 @@ class RectangularRoom:
             and self.y2 >= other.y1
         )
 
+def place_entities(room:RectangularRoom, dungeon:GameMap, maximum_monsters:int,) -> None:
+    number_of_monsters = random.randint(0,maximum_monsters)
+
+    for i in range(number_of_monsters):
+        x = random.randint(room.x1 + 1, room.x2 - 1)
+        y = random.randint(room.y1 + 1, room.y2 - 1)
+
+        if not any(entity.x == x and entity.y == y for entity in dungeon.entities):
+            if random.random() < 0.8:
+                entity_factories.orc.spawn(dungeon, x, y)
+            else:
+                entity_factories.troll.spawn(dungeon, x, y)
+
 def tunnel_between(start: Tuple[int, int], end: Tuple[int,int]) -> Iterator[Tuple[int, int]]:
     """두 점 사이에 L모양의 통로를 리턴."""
     x1, y1 = start
@@ -57,9 +71,9 @@ def tunnel_between(start: Tuple[int, int], end: Tuple[int,int]) -> Iterator[Tupl
         yield x, y
 
 
-def generate_dungeon(max_rooms:int, room_min_size:int, room_max_size:int, map_width:int, map_height:int, player:Entity) -> GameMap:
+def generate_dungeon(max_rooms:int, room_min_size:int, room_max_size:int, map_width:int, map_height:int, max_monsters_per_room:int, player:Entity) -> GameMap:
     """새로운 던전 맵을 생성"""
-    dungeon = GameMap(map_width, map_height)
+    dungeon = GameMap(map_width, map_height, entities=[player])
 
     rooms: List[RectangularRoom] = []
 
@@ -88,6 +102,8 @@ def generate_dungeon(max_rooms:int, room_min_size:int, room_max_size:int, map_wi
             #이전 방과 터널로 연결
             for x,y in tunnel_between(rooms[-1].center, new_room.center):
                 dungeon.tiles[x,y] = tile_types.floor
+
+        place_entities(new_room, dungeon, max_monsters_per_room)
 
         #새로운 방을 목록에 추가
         rooms.append(new_room)
