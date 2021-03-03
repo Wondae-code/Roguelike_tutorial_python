@@ -10,7 +10,7 @@ from game_map import GameMap
 import tile_types
 
 if TYPE_CHECKING:
-    from entity import Entity
+    from engine import Engine
 
 class RectangularRoom:
     def __init__(self, x: int, y:int, width:int, height:int):
@@ -71,9 +71,10 @@ def tunnel_between(start: Tuple[int, int], end: Tuple[int,int]) -> Iterator[Tupl
         yield x, y
 
 
-def generate_dungeon(max_rooms:int, room_min_size:int, room_max_size:int, map_width:int, map_height:int, max_monsters_per_room:int, player:Entity) -> GameMap:
+def generate_dungeon(max_rooms:int, room_min_size:int, room_max_size:int, map_width:int, map_height:int, max_monsters_per_room:int, engine:Engine) -> GameMap:
     """새로운 던전 맵을 생성"""
-    dungeon = GameMap(map_width, map_height, entities=[player])
+    player = engine.player
+    dungeon = GameMap(engine, map_width, map_height, entities=[player])
 
     rooms: List[RectangularRoom] = []
 
@@ -97,7 +98,7 @@ def generate_dungeon(max_rooms:int, room_min_size:int, room_max_size:int, map_wi
 
         if len(rooms) == 0:
             #플레이어가 시작할 첫번째 방
-            player.x, player.y = new_room.center
+            player.place(*new_room.center, dungeon)
         else:
             #이전 방과 터널로 연결
             for x,y in tunnel_between(rooms[-1].center, new_room.center):
