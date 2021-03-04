@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from entity import Actor
 
 
-class BaseAI(Actopm. BaseComponent):
+class BaseAI(Action, BaseComponent):
     entity:Actor
 
     def perform(self) -> None:
@@ -66,6 +66,6 @@ class HostileEnemy(BaseAI):
 
         if self.path:
             dest_x, dest_y = self.path.pop(0)
-            return MovementAction(self.entity, dest_x - self.entity.x, dest.y - self.entity.y,).perform()
+            return MovementAction(self.entity, dest_x - self.entity.x, dest_y - self.entity.y,).perform()
 
         return WaitAction(self.entity).perform()
