@@ -49,15 +49,26 @@ class EventHandler(tcod.event.EventDispatch[Action]):
     def __init__(self, engine:Engine):
         self.engine = engine
 
-    def handle_events(self) -> None:
-        raise NotImplementedError()
+    def handle_events(self, context: tcod.context.Context) -> None:
+        for event in tcod.event.wait():
+            context.convert_event(event)
+            self.dispatch(event)
+    
+    def ev_mousemotion(self, event: tcod.event.MouseMotion) -> None:
+        if self.engine.game_map.in_bounds(event.tile.x, event.tile.y):
+            self.engine.mouse_location = event.tile.x, event.tile.y
     
     def ev_quit(self, event: tcod.event.Quit) -> Optional[Action]:
         raise SystemExit()
 
+    def on_render(self, console:tcod.Console) -> None:
+        self.engine.render(console)
+
 class MainGameEventHandler(EventHandler):
-    def handle_events(self) -> None:
+    def handle_events(self, context: tcod.context.Context) -> None:
         for event in tcod.event.wait():
+            context.convert_event(event)
+
             action = self.dispatch(event)
 
             if action is None:
@@ -81,11 +92,13 @@ class MainGameEventHandler(EventHandler):
             action = WaitAction(player)
         elif key == tcod.event.K_ESCAPE:
             action = EscapeAction(player)
+        elif key == tcod.event.K_v:
+            self.engine.event_handler = HistoryViewer(self.engine)
 
         return action
 
 class GameOverEventHandler(EventHandler):
-    def handle_events(self) -> None:
+    def handle_events(self, context: tcod.context.Context) -> None:
         for event in tcod.event.wait():
             action = self.dispatch(event)
 
@@ -104,3 +117,51 @@ class GameOverEventHandler(EventHandler):
 
         #유효하지 않은 키가 눌릴 경우
         return action
+
+CURSOR_Y_KEYS = {
+    tcod.event.K_UP: -1,
+    tcod.event.K_DOWN: 1,
+    tcod.event.K_PAGEUP: -10,
+    tcod.event.K_PAGEDOWN: 10,
+}
+
+class HistoryViewer(EventHandler):
+    """조종 가능한 큰 창에 히스토리를 출력"""
+
+    def __init__(self, engine:Engine):
+        super().__init__(engine)
+        self.log_length = len(engine.message_log.messages)
+        self.cursor = self.log_length - 1
+
+    def on_render(self, console: tcod.Console) -> None:
+        super().on_render(console) # Draw the main state as the background
+
+        log_console = tcod.Console(console.width - 6, console.height - 6)
+
+        # Draw a frame with a custom banner title
+        log_console.draw_frame(0, 0, log_console.width, log_console.height)
+        log_console.print_box(0, 0, log_console.width, 1, "-|Message history|-", alignment=tcod.CENTER)
+
+        # 커서 파라메터를 이용해 메세지 로그를 그림
+        self.engine.message_log.render_messages(log_console, 1,1, log_console.width - 2, log_console.height - 2, self.engine.message_log.messages[: self.cursor + 1],)
+        log_console.blit(console, 3, 3)
+
+    def ev_keydown(self, event: tcod.event.KeyDown) -> None:
+        # 멋진 조건부 이동을 추가
+        if event.sym in CURSOR_Y_KEYS:
+            adjust = CURSOR_Y_KEYS[event.sym]
+            if adjust < 0 and self.cursor == 0:
+                # 위 끝에 있을 때, 아래로만 이동
+                self.cursor = self.log_length - 1
+            elif adjust > 0 and self.cursor == self.log_length - 1:
+                # 아래 끝에서 맨 첫번째로 이동
+                self.cursor = 0
+            else:
+                # Otherwise move while staying clamped to the bounds of the history log (해석 필요)
+                self.cursor = max(0, min(self.cursor + adjust, self.log_length - 1))
+        elif event.sym == tcod.event.K_HOME:
+            self.cursor = 0 # 바로 맨 위로 이동
+        elif event.sym == tcod.event.K_END:
+            self.cursor = self.log_length -1 # 바로 맨 끝으로 이동
+        else: # 다른 키는 메인 게임 화면으로 이동
+            self.engine.event_handler = MainGameEventHandler(self.engine)
