@@ -71,10 +71,6 @@ class ItemAction(Action):
         """아이템 능력 발동, 내용에 맞는 행동을 한다."""
         self.item.consumable.activate(self)
 
-class EscapeAction(Action):
-    def perform(self) -> None:
-        raise SystemExit()
-
 class DropItem(ItemAction):
     def perform(Self) -> None:
         self.entity.inventory.drop(self.item)

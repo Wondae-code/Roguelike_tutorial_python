@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-from typing import Optional, Tuple, Type, TypeVar, TYPE_CHECKING
+from typing import Optional, Tuple, Type, TypeVar, TYPE_CHECKING, Union
 
 from render_order import RenderOrder
 
@@ -19,7 +19,7 @@ class Entity:
     일반적인 오브젝트(플레이어, 적, 아이템 등등)
     """
 
-    parent: GameMap
+    parent: Union[GameMap,Inventory]
 
     def __init__(
         self, parent:Optional[GameMap] = None, x:int = 0, y:int = 0,
