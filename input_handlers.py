@@ -2,12 +2,16 @@ from __future__ import annotations
 
 from typing import Optional, TYPE_CHECKING
 
-import tcod.event
+import tcod
 
-from actions import Action, EscapeAction, BumpAction, WaitAction
+import actions
+from actions import (Action, EscapeAction, BumpAction, WaitAction, PickupAction)
+import color
+import exceptions
 
 if TYPE_CHECKING:
     from engine import Engine
+    from entity import Item
 
 MOVE_KEYS = {
     #Arrow Keys
@@ -45,14 +49,37 @@ WAIT_KEYS = {
     tcod.event.K_CLEAR,
 }
 
+CONFIRM_KEYS = {
+    tcod.event.K_RETURN,
+    tcod.event.K_KP_ENTER,
+}
+
 class EventHandler(tcod.event.EventDispatch[Action]):
     def __init__(self, engine:Engine):
         self.engine = engine
 
-    def handle_events(self, context: tcod.context.Context) -> None:
-        for event in tcod.event.wait():
-            context.convert_event(event)
-            self.dispatch(event)
+    def handle_events(self, event: tcod.event.Event) -> None:
+        self.handle_action(self.dispatch(event))
+
+    def handle_action(self, action: Optional[Action]) -> bool:
+        """
+        이벤트 메소드에서 리턴되는 actions을 관리,
+
+        action이 턴을 진행시킬 경우 True를 리턴.
+        """
+        if action is None:
+            return False
+
+        try:
+            action.perform()
+        except exceptions.Impossible as exc:
+            self.engine.message_log.add_message(exc.args[0], color.impossible)
+            return False # 예외일 때, 적 턴 스킵
+
+        self.engine.handle_enemy_turns()
+        
+        self.engine.update_fov()
+        return True
     
     def ev_mousemotion(self, event: tcod.event.MouseMotion) -> None:
         if self.engine.game_map.in_bounds(event.tile.x, event.tile.y):
@@ -64,21 +91,110 @@ class EventHandler(tcod.event.EventDispatch[Action]):
     def on_render(self, console:tcod.Console) -> None:
         self.engine.render(console)
 
+class AskUserEventHandler(EventHandler):
+    """특별한 입력을 요구하는 사용자 입력을 관리"""
+
+    def handle_action(self, action:Optional[Action]) -> bool:
+        """유효한 액션이 실행 됐을 때 main event handler로 돌아간다."""
+        if super().handle_action(action):
+            self.engine.event_handler = MainGameEventHandler(self.engine)
+            return True
+        return False
+    
+    def ev_keydown(self, event: tcod.event.KeyDown) -> Optional[Action]:
+        """디폴트로는 아무키를 누르면 이 input handler를 나간다."""
+        if event.sym in {
+            tcod.event.K_LSHIFT,
+            tcod.event.K_RSHIFT,
+            tcod.event.K_LCTRL,
+            tcod.event.K_RCTRL,
+            tcod.event.K_LALT,
+            tcod.event.K_RALT
+        }:
+            return None
+        return self.on_exit()
+
+    def ev_mousebuttondown(self, event: tcod.event.MouseButtonDown) -> Optional[Action]:
+        """디폴트로는 아무 마우스 클릭도 이 input handler를 나간다."""
+        return self.on_exit()
+
+    def on_exit(self) -> Optional[Action]:
+        """유저가 나가길 시도하거나 action을 취소할때 호출된다.
+        디폴트로는 main event handler로 돌아간다."""
+        self.engine.event_handler = MainGameEventHandler(self.engine)
+        return None
+
+class InventoryEventHandler(AskUserEventHandler):
+    """이 handler는 유저가 아이템을 고를 수 있게 한다. 그 뒤 이러나는 일은 subclass를 따른다."""
+
+    TITLE = "<missing title>"
+
+    def on_render(self, console: tcod.Console) -> none:
+        """인벤토리 속 아이템과 선택할 글자를 표현하는 메뉴를 그린다.
+        플레이어의 위치에 따라 다른 곳으로 이동하여 플레이어가 어디에 있던 메뉴를 볼 수 있게 한다."""
+        super().on_render(console)
+        number_of_items_in_inventory = len(self.engine.player.inventory.items)
+
+        height = number_of_items_in_inventory + 2
+
+        if height <= 3:
+            height = 3
+        
+        if self.engine.player.x <= 30:
+            x=40
+        else:
+            x=0
+        
+        y=0
+
+        width = len(self.TITLE) + 4
+
+        console.draw_frame(x=x, y=y, width=width, height=height, title=self.TITLE, clear=True, fg=(255,255,255), bg=(0,0,0),)
+
+        if number_of_items_in_inventory > 0:
+            for i, item in enumerate(self.engine.player.inventory.items):
+                item_key = chr(ord("a") + i)
+                console.print(x+1, y+i+1, f"({item_key}) ({item.name})")
+        else:
+            console.print(x+2, y+1, "(Empty")
+
+    def ev_keydown(self, event:tcod.event.KeyDown) -> Optional[Action]:
+        player = self.engine.player
+        key = event.sym
+        index = key - tcod.event.K_a
+
+        if 0 <= index <= 26:
+            try:
+                selected_item = player.inventory.items[index]
+            except IndexError:
+                self.engine.message_log.add_message("Invalid entry", color.invalid)
+                return None
+            return self.on_item_selected(selected_item)
+        return super().ev_keydown(event)
+
+    def on_item_selected(Self, item:Item) -> Optional[Action]:
+        """유저가 유효한 아이템을 골랐을 때 호출된다."""
+        raise NotImplementedError()
+
+class InventoryActivateHandler(InventoryEventHandler):
+    """인벤토리 아이템을 쓰는것을 관리"""
+    TITLE ="Select an item to use"
+
+    def on_item_selected(self, item:Item) -> Optional[Action]:
+        """선택된 아이템에 대한 액션을 리턴한다."""
+        return item.consumable.get_action(self.engine.player)
+
+class InventoryDropHandler(InventoryEventHandler):
+    """인벤토리 아이템을 떨어트리는 것을 관리"""
+    TITLE = "Select an item to drop"
+
+    def on_item_selected(self, item:Item) -> Optional[Action]:
+        """이 아이템을 떨어트린다"""
+        return actions.DropItem(self.engine.player, item)
+
+
+
 class MainGameEventHandler(EventHandler):
-    def handle_events(self, context: tcod.context.Context) -> None:
-        for event in tcod.event.wait():
-            context.convert_event(event)
-
-            action = self.dispatch(event)
-
-            if action is None:
-                continue
-
-            action.perform()
-
-            self.engine.handle_enemy_turns()
-            self.engine.update_fov() # 다음 행동 전에 시야 업데이트 
-
     def ev_keydown(self, event: tcod.event.KeyDown) -> Optional[Action]:
         action: Optional[Action] = None
         key = event.sym
@@ -94,26 +210,19 @@ class MainGameEventHandler(EventHandler):
             action = EscapeAction(player)
         elif key == tcod.event.K_v:
             self.engine.event_handler = HistoryViewer(self.engine)
+        elif key == tcod.event.K_g:
+            action = PickupAction(player)
+        elif key == tcod.event.K_i:
+            self.engine.event_handler = InventoryActivateHandler(self.engine)
+        elif key == tcod.event.K_d:
+            self.engine.event_handler = InventoryDropHandler(self.engine)
 
         return action
 
-class GameOverEventHandler(EventHandler):
-    def handle_events(self, context: tcod.context.Context) -> None:
-        for event in tcod.event.wait():
-            action = self.dispatch(event)
-
-            if action is None:
-                continue
-
-            action.perform()
-        
-    def ev_keydown(self, event: tcod.event.KeyDown) -> Optional[Action]:
-        action: Optional[Action] = None
-
-        key = event.sym
-
-        if key == tcod.event.K_ESCAPE:
-            action = EscapeAction(self.engine.player)
+class GameOverEventHandler(EventHandler): 
+    def ev_keydown(self, event: tcod.event.KeyDown) -> None:
+        if event.sym == tcod.event.K_ESCAPE:
+            raise SystemExit()
 
         #유효하지 않은 키가 눌릴 경우
         return action

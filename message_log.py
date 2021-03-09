@@ -1,4 +1,4 @@
-from typing import List, Reversible, Tuple
+from typing import Iterable, List, Reversible, Tuple
 import textwrap
 
 import tcod
@@ -37,14 +37,20 @@ class MessageLog:
         self.render_messages(console, x, y, width, height, self.messages)
 
     @staticmethod
-    def render_messages(console:tcod.Console, x:int, y:int, width:int, height:int, messages:Reversible[Message],) -> None:
+    def wrap(string: str, width:int) -> Iterable[str]:
+        """wrap된 텍스트 메세지를 출력"""
+        for line in string.splitlines(): # 메세지의 새로운 줄 관리
+            yield from textwrap.wrap(line, width, expand_tabs=True,)
+
+    @classmethod
+    def render_messages(cls, console:tcod.Console, x:int, y:int, width:int, height:int, messages:Reversible[Message],) -> None:
         """
         제공된 메세지를 그림.
         `messages`는 끝에서 시작하여 거꾸로 그려짐.
         """
         y_offset = height - 1
         for message in reversed(messages):
-            for line in reversed(textwrap.wrap(message.full_text, width)):
+            for line in reversed(list(cls.wrap(message.full_text, width))):
                 console.print(x=x, y=y + y_offset, string=line, fg=message.fg)
                 y_offset -= 1
                 if y_offset < 0:
