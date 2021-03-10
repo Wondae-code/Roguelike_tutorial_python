@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional, TYPE_CHECKING
+from typing import Callable, Optional, Tuple, TYPE_CHECKING
 
 import tcod
 
@@ -192,6 +192,92 @@ class InventoryDropHandler(InventoryEventHandler):
         """이 아이템을 떨어트린다"""
         return actions.DropItem(self.engine.player, item)
 
+class SelectIndexHandler(AskUserEventHandler):
+    def __init__(self, engine:Engine):
+        """이 관리자가 생성되면 커서를 플레이어 쪽으로 설정한다."""
+        super().__init__(engine)
+        player = self.engine.player
+        engine.mouse_location = player.x, player.y
+
+    def on_render(self, console: tcod.Console) -> None:
+        """타일 아래에 있는 커서를 타일 위로 강조한다."""
+        super().on_render(console)
+        x, y = self.engine.mouse_location
+        console.tiles_rgb["bg"][x, y] = color.white
+        console.tiles_rgb["fg"][x, y] = color.black
+    
+    def ev_keydown(self, event:tcod.event.KeyDown) -> Optional[Action]:
+        """확인 키나 이동키를 체크한다"""
+        key = event.sym
+        if key in MOVE_KEYS:
+            modifier = 1 # modifier키를 누르면 키 이동을 빠르게 한다.
+            if event.mod & tcod.event.KMOD_SHIFT:
+                modifier *= 5
+            if event.mod & tcod.event.KMOD_CTRL:
+                modifier *= 10
+            if event.mod & tcod.event.KMOD_ALT:
+                modifier *= 20
+
+            x, y = self.engine.mouse_location
+            dx, dy = MOVE_KEYS[key]
+            x += dx * modifier
+            y += dy * modifier
+            # 커서의 크기를 맵 사이즈에 맞춘다.
+            x = max(0, min(x, self.engine.game_map.width - 1))
+            y = max(0, min(y, self.engine.game_map.height - 1))
+            self.engine.mouse_location = x, y
+            return None
+        elif key in CONFIRM_KEYS:
+            return self.on_index_selected(*self.engine.mouse_location)
+        return super().ev_keydown(event)
+
+    def ev_mousebuttondown(self, event: tcod.event.MouseButtonDown) -> Optional[Action]:
+        """왼쪽 클릭으로 선택을 확인한다."""
+        if self.engine.game_map.in_bounds(*event.tile):
+            if event.button == 1:
+                return self.on_index_selected(*event.tile)
+        return super().ev_mousebuttondown(event)
+
+    def on_index_selected(self, event: tcod.event.MouseButtonDown) -> Optional[Action]:
+        """인덱스가 선택 됐을 때 호출."""
+        raise NotImplementedError()
+
+class LookHandler(SelectIndexHandler):
+    """플레이어가 키보드를 이용해 둘러볼수 있게 한다."""
+    def on_index_selected(self, x:int, y:int) -> None:
+        """MainHandler로 돌아간다."""
+        self.engine.event_handler = MainGameEventHandler(self.engine) 
+
+class SingleRangedAttackHandler(SelectIndexHandler):
+    """하나의 적을 가리키는 것을 관리. 선택된 적만 영향을 받는다."""
+    def __init__(self, engine: Engine, callback:Callable[Tuple[int,int], Optional[Action]]):
+        super().__init__(engine)
+
+        self.callback = callback
+    
+    def on_index_selected(self, x:int, y: int) -> Optional[Action]:
+        return self.callback((x,y))
+
+class AreaRangedAttackHandler(SelectIndexHandler):
+    """주어진 원호 안에 있는 적을 가리키는 것을 관리. 구역 안에 있는 엔티티는 영향을 받음."""
+    def __init__(self, engine:Engine, radius:int, callback: Callable[Tuple[int,int], Optional[Action]],):
+        super().__init__(engine)
+
+        self.radius = radius
+        self.callback = callback
+
+    def on_render(self, console:tcod.Console) -> None:
+        """커서 아래에 있는 타일 강조"""
+        super().on_render(console)
+
+        x,y = self.engine.mouse_location
+
+        # 목표지점 근처에 사각형을 그려서, 영향 받는 타일을 볼 수 있게 한다.
+        console.draw_frame(x=x - self.radius - 1, y=y - self.radius - 1, width=self.radius**2, height=self.radius**2, fg=color.red, clear=False,)
+
+    def on_index_selected(self, x:int, y:int) -> Optional[Action]:
+        return self.callback((x,y))
+
 
 
 class MainGameEventHandler(EventHandler):
@@ -216,6 +302,8 @@ class MainGameEventHandler(EventHandler):
             self.engine.event_handler = InventoryActivateHandler(self.engine)
         elif key == tcod.event.K_d:
             self.engine.event_handler = InventoryDropHandler(self.engine)
+        elif key == tcod.event.K_SLASH:
+            self.engine.event_handler = LookHandler(self.engine)
 
         return action
 
@@ -223,9 +311,6 @@ class GameOverEventHandler(EventHandler):
     def ev_keydown(self, event: tcod.event.KeyDown) -> None:
         if event.sym == tcod.event.K_ESCAPE:
             raise SystemExit()
-
-        #유효하지 않은 키가 눌릴 경우
-        return action
 
 CURSOR_Y_KEYS = {
     tcod.event.K_UP: -1,

@@ -1,18 +1,17 @@
 from __future__ import annotations
 
-from typing import List, Tuple, TYPE_CHECKING
+from typing import List, Optional, Tuple, TYPE_CHECKING
 
 import numpy as np
 import tcod
 
-from actions import Action, MeleeAction, MovementAction, WaitAction
-from components.base_component import BaseComponent
+from actions import Action, BumpAction, MeleeAction, MovementAction, WaitAction
 
 if TYPE_CHECKING:
     from entity import Actor
 
 
-class BaseAI(Action, BaseComponent):
+class BaseAI(Action):
     entity:Actor
 
     def perform(self) -> None:
@@ -46,6 +45,45 @@ class BaseAI(Action, BaseComponent):
 
         # List[List[int]]를 List[Tuple[int,int]]로 변환
         return [(index[0],index[1]) for index in path]
+
+class ConfusedEnemy(BaseAI):
+    """
+    혼란스러운 적은 주어진 수만큼의 턴 동안 목표없이 방황한다.
+    만약 actor가 랜덤으로 움직일 타일에 있을 경우, 공격한다.
+    """
+    def __init__(self, entity:Actor, previous_ai: Optional[BaseAI], turns_remaining: int):
+        super().__init__(entity)
+
+        self.previous_ai = previous_ai
+        self.turns_remaining = turns_remaining
+
+    def perform(self) -> None:
+        # 효과가 끝나면 AI를 이전 상태로 돌린다.
+        if self.turns_remaining <= 0:
+            self.engine.message_log.add_message(f"The {self.entity.name} is no longer confused.")
+            self.entity.ai = self.previous_ai
+        else:
+            # 랜덤한 방향을 고른다
+            direction._X, direction_y = random.choice(
+                [
+                    (-1,-1),    # 북서
+                    (0,-1),     # 북
+                    (1,-1),     # 북동
+                    (-1,0),     # 서
+                    (1,0),      # 동
+                    (-1,-1),    # 남서
+                    (0,1),      # 남
+                    (1,1),      # 남동
+                ]
+            )
+
+            self.turns_remaining -= 1
+
+            # 움직이거나 공격하려는 Actor는 무작위 방향으로 움직인다.
+            # 그냥 벽에 부딪히는 것도 가능하다.
+            return BumpAction(self.entity, direction_x, direction_y).perform()
+
+
 
 class HostileEnemy(BaseAI):
     def __init__(self, entity:Actor):
