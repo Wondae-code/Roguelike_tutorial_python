@@ -4,3 +4,7 @@ class Impossible(Exception):
 
     이유는 예외 메세지에 주어짐.
     """
+
+
+class QuitWithoutSaving(SystemExit):
+    """자동 저장 없이 게임이 종료될 때 호출."""

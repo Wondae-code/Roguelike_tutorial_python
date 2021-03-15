@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from typing import List, Optional, Tuple, TYPE_CHECKING
 
 import numpy as np
@@ -12,12 +13,12 @@ if TYPE_CHECKING:
 
 
 class BaseAI(Action):
-    entity:Actor
+    entity: Actor
 
     def perform(self) -> None:
         raise NotImplementedError()
 
-    def get_path_to(self, dest_x:int, dest_y:int) -> List[Tuple[int,int]]:
+    def get_path_to(self, dest_x: int, dest_y: int) -> List[Tuple[int, int]]:
         """
             목표 위치로의 경로를 계산하고 리턴
 
@@ -38,20 +39,23 @@ class BaseAI(Action):
         graph = tcod.path.SimpleGraph(cost=cost, cardinal=2, diagonal=3)
         pathfinder = tcod.path.Pathfinder(graph)
 
-        pathfinder.add_root((self.entity.x, self.entity.y)) #시작위치
+        pathfinder.add_root((self.entity.x, self.entity.y))  # 시작위치
 
         # 목적지까지의 경로를 계산하고 시작지점 삭제
-        path: List[List[int]] = pathfinder.path_to((dest_x,dest_y))[1:].tolist()
+        path: List[List[int]] = pathfinder.path_to((dest_x, dest_y))[
+            1:].tolist()
 
         # List[List[int]]를 List[Tuple[int,int]]로 변환
-        return [(index[0],index[1]) for index in path]
+        return [(index[0], index[1]) for index in path]
+
 
 class ConfusedEnemy(BaseAI):
     """
     혼란스러운 적은 주어진 수만큼의 턴 동안 목표없이 방황한다.
     만약 actor가 랜덤으로 움직일 타일에 있을 경우, 공격한다.
     """
-    def __init__(self, entity:Actor, previous_ai: Optional[BaseAI], turns_remaining: int):
+
+    def __init__(self, entity: Actor, previous_ai: Optional[BaseAI], turns_remaining: int):
         super().__init__(entity)
 
         self.previous_ai = previous_ai
@@ -60,20 +64,21 @@ class ConfusedEnemy(BaseAI):
     def perform(self) -> None:
         # 효과가 끝나면 AI를 이전 상태로 돌린다.
         if self.turns_remaining <= 0:
-            self.engine.message_log.add_message(f"The {self.entity.name} is no longer confused.")
+            self.engine.message_log.add_message(
+                f"The {self.entity.name} is no longer confused.")
             self.entity.ai = self.previous_ai
         else:
             # 랜덤한 방향을 고른다
-            direction._X, direction_y = random.choice(
+            direction_x, direction_y = random.choice(
                 [
-                    (-1,-1),    # 북서
-                    (0,-1),     # 북
-                    (1,-1),     # 북동
-                    (-1,0),     # 서
-                    (1,0),      # 동
-                    (-1,-1),    # 남서
-                    (0,1),      # 남
-                    (1,1),      # 남동
+                    (-1, -1),    # 북서
+                    (0, -1),     # 북
+                    (1, -1),     # 북동
+                    (-1, 0),     # 서
+                    (1, 0),      # 동
+                    (-1, -1),    # 남서
+                    (0, 1),      # 남
+                    (1, 1),      # 남동
                 ]
             )
 
@@ -84,17 +89,16 @@ class ConfusedEnemy(BaseAI):
             return BumpAction(self.entity, direction_x, direction_y).perform()
 
 
-
 class HostileEnemy(BaseAI):
-    def __init__(self, entity:Actor):
+    def __init__(self, entity: Actor):
         super().__init__(entity)
-        self.path: List[Tuple[int,int]] = []
+        self.path: List[Tuple[int, int]] = []
 
     def perform(self) -> None:
         target = self.engine.player
         dx = target.x - self.entity.x
         dy = target.y - self.entity.y
-        distance = max(abs(dx),abs(dy)) #chebyshev 거리
+        distance = max(abs(dx), abs(dy))  # chebyshev 거리
 
         if self.engine.game_map.visible[self.entity.x, self.entity.y]:
             if distance <= 1:
