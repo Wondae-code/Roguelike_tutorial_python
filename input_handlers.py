@@ -117,6 +117,9 @@ class EventHandler(BaseEventHandler):
             if not self.engine.player.is_alive:
                 # 플레이어가 action 동안이나 이후에 죽었을 경우
                 return GameOverEventHandler(self.engine)
+            elif self.engine.player.level.requires_level_up:
+                return LevelUpEventHandler(self.engine)
+
             return MainGameEventHandler(self.engine)
         return self
 
@@ -172,6 +175,72 @@ class AskUserEventHandler(EventHandler):
         """유저가 나가길 시도하거나 action을 취소할때 호출된다.
         디폴트로는 main event handler로 돌아간다."""
         return MainGameEventHandler(self.engine)
+
+class CharacterScreenEventHandler(AskUserEventHandler):
+    TITLE = "Character Information"
+
+    def on_render(self, console:tcod.Console) -> None:
+        super().on_render(console)
+
+        if self.engine.player.x <= 30:
+            x=40
+        else:
+            x=0
+        
+        y = 0
+
+        width = len(self.TITLE) + 4
+        
+        console.draw_frame(x=x, y=y, width=width, height=7, title=self.TITLE, clear=True, fg=(255, 255, 255), bg=(0, 0, 0),)
+        
+        console.print(x=x+1, y=1, string=f"Level: {self.engine.player.level.current_level}")
+        console.print(x=x+1, y=2, string=f"XP: {self.engine.player.level.current_xp}")
+        console.print(x=x+1, y=3, string=f"XP for next level: {self.engine.player.level.experience_to_next_level}")
+        console.print(x=x+1, y=4, string=f"Attack: {self.engine.player.fighter.power}")
+        console.print(x=x+1, y=5, string=f"Defense: {self.engine.player.fighter.defense}")
+
+class LevelUpEventHandler(AskUserEventHandler):
+    TITLE = "Level Up"
+
+    def on_render(self, console:tcod.Console) -> None:
+        super().on_render(console)
+
+        if self.engine.player.x <= 30:
+            x = 40
+        else:
+            x = 0
+
+        console.draw_frame(x=x, y=0, width=35, height=8, title=self.TITLE, clear=True, fg=(255, 255, 255), bg=(0, 0, 0),)
+
+        console.print(x=x+1, y=1, string="Congratulations! You Level up!")
+        console.print(x=x+1, y=2, string="Select an attribute to increase.")
+
+        console.print(x=x+1, y=4, string=f"a) constitution (+20HP, from {self.engine.player.fighter.max_hp})",)
+        console.print(x=x+1, y=5, string=f"b) strength (+1 atk, from {self.engine.player.fighter.power})",)
+        console.print(x=x+1, y=6, string=f"c) defense (+1 def, from {self.engine.player.fighter.defense})")
+
+    def ev_keydown(self, event = tcod.event.KeyDown) -> Optional[ActionOrHandler]:
+        player = self.engine.player
+        key = event.sym
+        index = key - tcod.event.K_a
+
+        if 0 <= index <= 2:
+            if index == 0:
+                player.level.increase_max_hp()
+            if index == 1:
+                player.level.increase_power()
+            if index == 2:
+                player.level.increase_defense()
+        else:
+            self.engine.message_log.add_message("Invalid entry.", color.invalid)
+
+            return None
+
+        return super().ev_keydown(event)
+
+    def ev_mousebuttondown(self, event:tcod.evnet.MouseButtonDown) -> Optional[ActionOrHandler]:
+        """보통처럼 플레이어가 클릭을 통해 나가지 않도록 한다."""
+        return None
 
 
 class InventoryEventHandler(AskUserEventHandler):
@@ -345,8 +414,12 @@ class MainGameEventHandler(EventHandler):
     def ev_keydown(self, event: tcod.event.KeyDown) -> Optional[ActionOrHandler]:
         action: Optional[Action] = None
         key = event.sym
+        modifier = event.mod
 
         player = self.engine.player
+
+        if key == tcod.event.K_PERIOD and modifier & tcod.event.KMOD_SHIFT:
+            return actions.TakeStairsAction(player)
 
         if key in MOVE_KEYS:
             dx, dy = MOVE_KEYS[key]
@@ -363,6 +436,8 @@ class MainGameEventHandler(EventHandler):
             return InventoryActivateHandler(self.engine)
         elif key == tcod.event.K_d:
             return InventoryDropHandler(self.engine)
+        elif key == tcod.event.K_c:
+            return CharacterScreenEventHandler(self.engine)
         elif key == tcod.event.K_SLASH:
             return LookHandler(self.engine)
 
