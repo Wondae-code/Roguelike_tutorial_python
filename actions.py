@@ -69,11 +69,24 @@ class ItemAction(Action):
 
     def perform(self) -> None:
         """아이템 능력 발동, 내용에 맞는 행동을 한다."""
-        self.item.consumable.activate(self)
+        if self.item.consumable:
+            self.item.consumable.activate(self)
 
 class DropItem(ItemAction):
     def perform(Self) -> None:
+        if self.entity.Equipment.item_is_equipped(self.item):
+            self.entity.equipment.toggle_equip(self.item)
+            
         self.entity.inventory.drop(self.item)
+
+class EquipAction(Action):
+    def __init__(self, entity: Actor, item: Item):
+        super().__init__(entity)
+
+        self. item = item
+
+    def perform(self) -> None:
+        self.entity.equipment.toggle_equip(self.item)
 
 class WaitAction(Action):
     def perform(self) -> None:
