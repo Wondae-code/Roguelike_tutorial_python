@@ -73,8 +73,8 @@ class ItemAction(Action):
             self.item.consumable.activate(self)
 
 class DropItem(ItemAction):
-    def perform(Self) -> None:
-        if self.entity.Equipment.item_is_equipped(self.item):
+    def perform(self) -> None:
+        if self.entity.equipment.item_is_equipped(self.item):
             self.entity.equipment.toggle_equip(self.item)
             
         self.entity.inventory.drop(self.item)
